@@ -1,0 +1,22 @@
+---
+- name: "Setting up ubuntu-dev."
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: "Ensure Python 3.12"
+      apt:
+        name: "python3.12"
+        state: "present"
+      become: true
+
+    - name: "Add bashrc customizations."
+    - blockinfile:
+        path: "/etc/bash.bashrc"
+        prepend_newlione: true
+        append_newline: true
+        block: |
+          alias python="python3"
+          alias pip="pip3"
+          alias ls="ls -ahl"
+      become: true
