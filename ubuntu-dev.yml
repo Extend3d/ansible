@@ -2,21 +2,59 @@
 - name: "Setting up ubuntu-dev."
   hosts: localhost
   connection: local
+  vars:
+    openvscode_server_version: "1.95.2"
+
+  pre_tasks:
+    - name: "Update apt cache if needed."
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
 
   tasks:
-    - name: "Ensure Python 3.12"
-      apt:
-        name: "python3.12"
-        state: "present"
-      become: true
+    - name: "Setting hostname."
+      hostname:
+        name: "ubuntu-dev"
 
     - name: "Add bashrc customizations."
-    - blockinfile:
+      become: true
+      blockinfile:
         path: "/etc/bash.bashrc"
         prepend_newlione: true
         append_newline: true
-        block: |
+        block: |   # Adds newlines between each entry below.
+          alias vi="vim"  
           alias python="python3"
           alias pip="pip3"
           alias ls="ls -ahl"
+
+    - name: "Download OpenVSCode Server."
+      unarchive:
+        src: "https://github.com/gitpod-io/openvscode-server/releases/download/openvscode-server-v{{ openvscode_server_version }}/openvscode-server-v{{ openvscode_server_version }}-linux-x64.tar.gz"
+        dest: "/home/user"
+        remote_src: true
+        creates: "/home/user/openvscode-server-v{{ openvscode_server_version }}-linux-x64"
+
+    - name: "Configure OpenVSCode Server as a service."
       become: true
+      blockinfile:
+        path: "/etc/systemd/system/openvscode-server.service"
+        create: true
+        block: |   # Adds newlines between each entry below.
+          [Unit]
+          Description=OpenVSCode Server
+          After=network.target
+
+          [Service]
+          ExecStart=/home/user/openvscode-server-v{{ openvscode_server_version }}-linux-x64/bin/openvscode-server --host 0.0.0.0 --port 6000 --without-connection-token
+          Restart=always
+          WorkingDirectory=/home/user/openvscode-server-v{{ openvscode_server_version }}-linux-x64
+
+    - name: "Start OpenVSCode Server as a service."
+      become: true
+      service:
+        name: "openvscode-server"
+        state: "started"
+        enabled: true
+
+
