@@ -1,42 +1,73 @@
 ---
+# Installing Ansible on Ubuntu:
+# sudo apt-add-repository ppa:ansible/ansible
+# sudo apt update
+# sudo apt install ansible
+
+# Running the playbook:
+# sudo ansible-playbook ansible/ubuntu-dev.yml
+
 - name: "Setting up ubuntu-dev."
   hosts: localhost
   connection: local
   vars:
     openvscode_server_version: "1.95.2"
+    openvscode_install_dir: "/opt"
+    openvscode_server_port: 3001
 
   pre_tasks:
     - name: "Update apt cache if needed."
+      become: true
       apt:
         update_cache: true
         cache_valid_time: 3600
 
+    - name: "Populate service facts."
+      service_facts:
+
+  handlers:
+    - name: "restart-openvscode-server"
+      become: true
+      command: systemctl daemon-reload && systemctl restart openvscode-server
+
   tasks:
     - name: "Setting hostname."
+      become: true
       hostname:
         name: "ubuntu-dev"
 
-    - name: "Add bashrc customizations."
-      become: true
-      blockinfile:
-        path: "/etc/bash.bashrc"
-        prepend_newlione: true
-        append_newline: true
-        block: |   # Adds newlines between each entry below.
-          alias vi="vim"  
-          alias python="python3"
-          alias pip="pip3"
-          alias ls="ls -ahl"
+# not working
+      # become: true
+      # blockinfile:
+      #   path: "/etc/profile"
+      #   prepend_newline: true
+      #   append_newline: true
+      #   block: |   # Adds newlines between each entry below.
+      #     alias python="python3"
+      #     alias pip="pip3"
+      #     alias ls="ls -ahl"
 
+# install packages
+# net-tools # ifconfig
+
+
+    - name: "Install Tailscale."
+      become: true
+      shell: "curl -fsSL https://tailscale.com/install.sh | sh"
+      when: ansible_facts['services']['tailscaled.service']['state'] | default('stopped') != 'running'
+      
+      # https://github.com/gitpod-io/openvscode-server?tab=readme-ov-file#getting-started
+      # https://coder.com/docs/code-server/install
     - name: "Download OpenVSCode Server."
       unarchive:
         src: "https://github.com/gitpod-io/openvscode-server/releases/download/openvscode-server-v{{ openvscode_server_version }}/openvscode-server-v{{ openvscode_server_version }}-linux-x64.tar.gz"
-        dest: "/home/user"
+        dest: "{{ openvscode_install_dir}}"
         remote_src: true
-        creates: "/home/user/openvscode-server-v{{ openvscode_server_version }}-linux-x64"
+        creates: "{{ openvscode_install_dir }}/openvscode-server-v{{ openvscode_server_version }}-linux-x64"
 
     - name: "Configure OpenVSCode Server as a service."
       become: true
+      notify: "restart-openvscode-server" # Runs if changes are made by this task
       blockinfile:
         path: "/etc/systemd/system/openvscode-server.service"
         create: true
@@ -46,15 +77,17 @@
           After=network.target
 
           [Service]
-          ExecStart=/home/user/openvscode-server-v{{ openvscode_server_version }}-linux-x64/bin/openvscode-server --host 0.0.0.0 --port 6000 --without-connection-token
-          Restart=always
-          WorkingDirectory=/home/user/openvscode-server-v{{ openvscode_server_version }}-linux-x64
+          ExecStart={{ openvscode_install_dir }}/openvscode-server-v{{ openvscode_server_version }}-linux-x64/bin/openvscode-server --host 0.0.0.0 --port {{ openvscode_server_port }} --without-connection-token --disable-telemetry
+          User=user
+          Group=users
+          WorkingDirectory={{ openvscode_install_dir }}/openvscode-server-v{{ openvscode_server_version }}-linux-x64
 
-    - name: "Start OpenVSCode Server as a service."
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: "Ensure OpenVSCode Server is started."
       become: true
       service:
         name: "openvscode-server"
         state: "started"
         enabled: true
-
-
